@@ -457,7 +457,7 @@ class AnomalyCLIPModule(LightningModule):
 
     @rank_zero_only
     def test_step(self, batch: Any, batch_idx: int):
-        image_features, labels, label, segment_size, path = batch
+        image_features, labels, label, segment_size, _ = batch
         image_features = image_features.to(self.device)
         labels = labels.squeeze(0).to(self.device)
 
@@ -476,20 +476,63 @@ class AnomalyCLIPModule(LightningModule):
         # Compute joint probabilities
         class_probs = softmax_similarity * abnormal_scores.unsqueeze(1)
 
+        #print(softmax_similarity.shape) 
+        #print(abnormal_scores.shape)
+
         # Remove padded frames
         num_labels = labels.shape[0]
         class_probs = class_probs[:num_labels]
         abnormal_scores = abnormal_scores[:num_labels]
-        softmax_similarity = softmax_similarity[:num_labels]
 
-        if self.visualizer is not None:
-            self.visualizer.process_video(
-                abnormal_scores,
-                class_probs,
-                softmax_similarity,
-                labels,
-                path,
-            )
+        # Print da probabilidade de cada classe para o primeiro frame da sequência e a probilidade das outras classes
+        frame_class_probs = []
+        for i, frame_probs in enumerate(softmax_similarity[:num_labels]):
+            frame_probs_dict = {f"frame_{i}_class_{j}_prob": prob.item() for j, prob in enumerate(frame_probs)}
+            frame_class_probs.append(frame_probs_dict)
+
+        if frame_class_probs:
+            labels_df = pd.read_csv(self.trainer.datamodule.hparams.labels_file)
+            class_names = labels_df["name"].tolist()
+            normal_class_index = class_names.index("Normal")
+            class_names.pop(normal_class_index)
+
+            optimal_threshold = 0.3323360085487366
+
+            for frame_index, frame_probs in enumerate(frame_class_probs):
+                class_index = torch.argmax(softmax_similarity[frame_index]).item()
+                other_probs = [round(prob.item(), 4) for j, prob in enumerate(softmax_similarity[frame_index])]
+
+                normal_prob = round((1 - abnormal_scores[frame_index]).item(), 4)
+
+                if normal_prob > optimal_threshold:
+                    print(f"Frame {frame_index} is Normal with probability {normal_prob}")
+                else:
+                    print(f"Frame Classe {class_index} ({class_names[class_index]}). Outras Probabilidades de classe: {other_probs}")
+
+                other_probs.append(normal_prob)
+                class_names_with_normal = class_names + ["Normal"]
+
+                plt.figure(figsize=(10, 6))
+                bars = plt.bar(range(len(other_probs)), other_probs, tick_label=class_names_with_normal)
+                plt.xlabel('Class')
+                plt.ylabel('Probability')
+                plt.title(f'Class Probabilities for Frame {frame_index}')
+                plt.xticks(rotation=45)
+
+                if normal_prob > optimal_threshold:
+                    bars[-1].set_color('red')
+                else:
+                    bars[class_index].set_color('red')
+
+                plt.axhline(y=optimal_threshold, color='grey', linestyle='--')
+
+                ckpt_path = Path(self.trainer.ckpt_path)
+                save_dir = os.path.normpath(ckpt_path.parent).split(os.path.sep)[-1]
+                save_dir = Path(os.path.join("C:/Users/Gonca/AnomalyCLIP/logs/eval/runs", str(save_dir)))
+                save_dir.mkdir(parents=True, exist_ok=True)
+                save_path = save_dir / f'class_probabilities_frame_{frame_index}.png'
+                plt.savefig(save_path)
+                plt.close()
 
         return {
             "abnormal_scores": abnormal_scores,
