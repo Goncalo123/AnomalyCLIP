@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, List
+import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -299,7 +300,7 @@ class AnomalyCLIPModule(LightningModule):
         pass
 
     def validation_step(self, batch: Any, batch_idx: int):
-        image_features, labels, label, segment_size = batch
+        image_features, labels, label, segment_size, _ = batch
         image_features = image_features.to(self.device)
         labels = labels.squeeze(0).to(self.device)
 
@@ -484,55 +485,62 @@ class AnomalyCLIPModule(LightningModule):
         class_probs = class_probs[:num_labels]
         abnormal_scores = abnormal_scores[:num_labels]
 
-        # Print da probabilidade de cada classe para o primeiro frame da sequência e a probilidade das outras classes
-        frame_class_probs = []
-        for i, frame_probs in enumerate(softmax_similarity[:num_labels]):
-            frame_probs_dict = {f"frame_{i}_class_{j}_prob": prob.item() for j, prob in enumerate(frame_probs)}
-            frame_class_probs.append(frame_probs_dict)
+        Visual = False
 
-        if frame_class_probs:
-            labels_df = pd.read_csv(self.trainer.datamodule.hparams.labels_file)
-            class_names = labels_df["name"].tolist()
-            normal_class_index = class_names.index("Normal")
-            class_names.pop(normal_class_index)
+        if Visual:
 
-            optimal_threshold = 0.3323360085487366
+            # Folder name to save plots
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            for frame_index, frame_probs in enumerate(frame_class_probs):
-                class_index = torch.argmax(softmax_similarity[frame_index]).item()
-                other_probs = [round(prob.item(), 4) for j, prob in enumerate(softmax_similarity[frame_index])]
+            # Print da probabilidade de cada classe para o primeiro frame da sequência e a probilidade das outras classes
+            frame_class_probs = []
+            for i, frame_probs in enumerate(softmax_similarity[:num_labels]):
+                frame_probs_dict = {f"frame_{i}_class_{j}_prob": prob.item() for j, prob in enumerate(frame_probs)}
+                frame_class_probs.append(frame_probs_dict)
 
-                normal_prob = round((1 - abnormal_scores[frame_index]).item(), 4)
+            if frame_class_probs:
+                labels_df = pd.read_csv(self.trainer.datamodule.hparams.labels_file)
+                class_names = labels_df["name"].tolist()
+                normal_class_index = class_names.index("Normal")
+                class_names.pop(normal_class_index)
 
-                if normal_prob > optimal_threshold:
-                    print(f"Frame {frame_index} is Normal with probability {normal_prob}")
-                else:
-                    print(f"Frame Classe {class_index} ({class_names[class_index]}). Outras Probabilidades de classe: {other_probs}")
+                optimal_threshold = 0.3323360085487366
 
-                other_probs.append(normal_prob)
-                class_names_with_normal = class_names + ["Normal"]
+                for frame_index, frame_probs in enumerate(frame_class_probs):
+                    class_index = torch.argmax(softmax_similarity[frame_index]).item()
+                    other_probs = [round(prob.item(), 4) for j, prob in enumerate(softmax_similarity[frame_index])]
 
-                plt.figure(figsize=(10, 6))
-                bars = plt.bar(range(len(other_probs)), other_probs, tick_label=class_names_with_normal)
-                plt.xlabel('Class')
-                plt.ylabel('Probability')
-                plt.title(f'Class Probabilities for Frame {frame_index}')
-                plt.xticks(rotation=45)
+                    normal_prob = round((1 - abnormal_scores[frame_index]).item(), 4)
 
-                if normal_prob > optimal_threshold:
-                    bars[-1].set_color('red')
-                else:
-                    bars[class_index].set_color('red')
+                    if normal_prob > optimal_threshold:
+                        print(f"Frame {frame_index} is Normal with probability {normal_prob}")
+                    else:
+                        print(f"Frame Classe {class_index} ({class_names[class_index]}). Outras Probabilidades de classe: {other_probs}")
 
-                plt.axhline(y=optimal_threshold, color='grey', linestyle='--')
+                    other_probs.append(normal_prob)
+                    class_names_with_normal = class_names + ["Normal"]
 
-                ckpt_path = Path(self.trainer.ckpt_path)
-                save_dir = os.path.normpath(ckpt_path.parent).split(os.path.sep)[-1]
-                save_dir = Path(os.path.join("C:/Users/Gonca/AnomalyCLIP/logs/eval/runs", str(save_dir)))
-                save_dir.mkdir(parents=True, exist_ok=True)
-                save_path = save_dir / f'class_probabilities_frame_{frame_index}.png'
-                plt.savefig(save_path)
-                plt.close()
+                    plt.figure(figsize=(10, 6))
+                    bars = plt.bar(range(len(other_probs)), other_probs, tick_label=class_names_with_normal)
+                    plt.xlabel('Class')
+                    plt.ylabel('Probability')
+                    plt.title(f'Class Probabilities for Frame {frame_index}')
+                    plt.xticks(rotation=45)
+
+                    if normal_prob > optimal_threshold:
+                        bars[-1].set_color('red')
+                    else:
+                        bars[class_index].set_color('red')
+
+                    plt.axhline(y=optimal_threshold, color='grey', linestyle='--')
+
+                    ckpt_path = Path(self.trainer.ckpt_path)
+                    save_dir = os.path.normpath(ckpt_path.parent).split(os.path.sep)[-1]
+                    save_dir = Path(f"C:/Users/Gonca/AnomalyCLIP/logs/eval/runs/{timestamp}")
+                    save_dir.mkdir(parents=True, exist_ok=True)
+                    save_path = save_dir / f'class_probabilities_frame_{frame_index}.png'
+                    plt.savefig(save_path)
+                    plt.close()
 
         return {
             "abnormal_scores": abnormal_scores,
@@ -568,6 +576,8 @@ class AnomalyCLIPModule(LightningModule):
 
         optimal_idx = np.argmax(tpr.cpu().data.numpy() - fpr.cpu().data.numpy())
         optimal_threshold = thresholds[optimal_idx]
+
+        print(f"Optimal threshold: {optimal_threshold}")
 
         precision, recall, thresholds = self.pr_curve(abnormal_scores, labels_binary)
         auc_pr = self.average_precision(abnormal_scores, labels_binary)
