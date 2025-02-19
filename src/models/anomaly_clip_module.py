@@ -504,7 +504,13 @@ class AnomalyCLIPModule(LightningModule):
                 normal_class_index = class_names.index("Normal")
                 class_names.pop(normal_class_index)
 
-                optimal_threshold = 0.3323360085487366
+                # Optimal threshold from checkpoint
+                labels_binary = torch.where(labels == normal_class_index, 0, 1)
+                fpr, tpr, roc_thresholds = self.roc(abnormal_scores, labels_binary)
+                optimal_idx = np.argmax(tpr.cpu().numpy() - fpr.cpu().numpy())
+                optimal_threshold = roc_thresholds[optimal_idx].cpu().item()
+
+                #print(f"Optimal threshold: {optimal_threshold}")
 
                 for frame_index, frame_probs in enumerate(frame_class_probs):
                     class_index = torch.argmax(softmax_similarity[frame_index]).item()
