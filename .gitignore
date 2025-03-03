@@ -171,10 +171,12 @@ src/preprocessing
 # Allow files
 !/configs/data/shanghaitech.yaml
 !/configs/data/ucfcrime.yaml
+!/configs/data/ucfcrime_feature.yaml
 !/configs/data/xdviolence.yaml
 
 !/configs/experiment/shanghaitech.yaml
 !/configs/experiment/ucfcrime.yaml
+!/configs/experiment/ucfcrime_feature.yaml
 !/configs/experiment/xdviolence.yaml
 
 !/configs/model/anomaly_clip_shanghaitech.yaml
