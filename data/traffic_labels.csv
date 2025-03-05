@@ -1,0 +1,9 @@
+id,name
+0,Accident
+1,Else
+2,IllegalOccupation
+3,IllegalTurn
+4,Normal
+5,PedestrianOnRoad
+6,Retrograde
+7,RoadSpills
