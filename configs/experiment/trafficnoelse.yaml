@@ -4,7 +4,7 @@
 # python train.py experiment=example
 
 defaults:
-  - override /data: traffic.yaml
+  - override /data: trafficnoelsex2.yaml
   - override /model: anomaly_clip_shanghaitech.yaml
   - override /callbacks: default.yaml
   - override /trainer: gpu.yaml

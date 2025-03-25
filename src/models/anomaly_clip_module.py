@@ -523,28 +523,59 @@ class AnomalyCLIPModule(LightningModule):
                     else:
                         print(f"Frame Classe {class_index} ({class_names[class_index]}). Outras Probabilidades de classe: {other_probs}")
 
-                    other_probs.append(normal_prob)
-                    class_names_with_normal = class_names + ["Normal"]
+                    # Create a single figure with two subplots
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+                    fig.subplots_adjust(hspace=0.4)
 
-                    plt.figure(figsize=(10, 6))
-                    bars = plt.bar(range(len(other_probs)), other_probs, tick_label=class_names_with_normal)
-                    plt.xlabel('Class')
-                    plt.ylabel('Probability')
-                    plt.title(f'Class Probabilities for Frame {frame_index}')
-                    plt.xticks(rotation=45)
+                    # -------------------------------------------
+                    # Subplot 1: Bar chart for this frame
+                    bars = ax1.bar(range(len(other_probs)), other_probs, tick_label=class_names)
+                    ax1.set_xlabel("Class")
+                    ax1.set_ylabel("Probability")
+                    ax1.set_title(f"Class Probabilities for Frame {frame_index}")
+                    ax1.tick_params(axis="x", rotation=45)
+                    ax1.axhline(y=optimal_threshold, color="grey", linestyle="--")
 
-                    if normal_prob > optimal_threshold:
-                        bars[-1].set_color('red')
-                    else:
-                        bars[class_index].set_color('red')
+                    # Highlight predicted abnormal class if below threshold
+                    if normal_prob <= optimal_threshold:
+                        bars[class_index].set_color("red")
 
-                    plt.axhline(y=optimal_threshold, color='grey', linestyle='--')
+                    # -------------------------------------------
+                    # Subplot 2: Line chart for abnormal scores across frames
+                    bnormal_scores_np = abnormal_scores.detach().cpu().numpy()
+                    x_vals = np.arange(abnormal_scores.size(0))
+                    ax2.plot(x_vals, bnormal_scores_np, color="#4e79a7", linewidth=1)
+                    ymin, ymax = 0, 1
+                    ax2.set_xlim([0, x_vals.size - 1])
+                    ax2.set_ylim([ymin, ymax])
+                    ax2.set_ylabel("Anomaly Probability")
+                    ax2.set_xlabel("Frame Number")
+                    ax2.axhline(y=optimal_threshold, color="grey", linestyle="--")
 
+                    # Highlight abnormal labeled regions
+                    start_idx = None
+                    for i, label_val in enumerate(labels):
+                        if start_idx is None and label_val == normal_class_index:
+                            start_idx = i
+                        elif start_idx is not None and label_val != normal_class_index:
+                            rect = plt.Rectangle(
+                                (start_idx, 0), i - start_idx, ymax - ymin, color="#e15759", alpha=0.5
+                            )
+                            ax2.add_patch(rect)
+                            start_idx = None
+                    if start_idx is not None:
+                        rect = plt.Rectangle(
+                            (start_idx, 0), len(labels) - start_idx, ymax - ymin, color="#e15759", alpha=0.5
+                        )
+                        ax2.add_patch(rect)
+
+                    # Save the combined figure
                     ckpt_path = Path(self.trainer.ckpt_path)
                     save_dir = os.path.normpath(ckpt_path.parent).split(os.path.sep)[-1]
                     save_dir = Path(f"C:/Users/Gonca/AnomalyCLIP/logs/eval/runs/{timestamp}")
                     save_dir.mkdir(parents=True, exist_ok=True)
-                    save_path = save_dir / f'class_probabilities_frame_{frame_index}.png'
+
+                    save_path = save_dir / f"class_probabilities_and_abnscores_frame_{frame_index}.png"
                     plt.savefig(save_path)
                     plt.close()
 

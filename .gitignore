@@ -174,12 +174,15 @@ src/preprocessing
 !/configs/data/ucfcrime_feature.yaml
 !/configs/data/xdviolence.yaml
 !/configs/data/traffic.yaml
+!/configs/data/trafficnoelse.yaml
+!/configs/data/trafficnoelsex2.yaml
 
 !/configs/experiment/shanghaitech.yaml
 !/configs/experiment/ucfcrime.yaml
 !/configs/experiment/ucfcrime_feature.yaml
 !/configs/experiment/xdviolence.yaml
 !/configs/experiment/traffic.yaml
+!/configs/experiment/trafficnoelse.yaml
 
 !/configs/model/anomaly_clip_shanghaitech.yaml
 !/configs/model/anomaly_clip_ucfcrime.yaml
