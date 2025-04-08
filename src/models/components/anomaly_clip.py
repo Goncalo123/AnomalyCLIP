@@ -11,6 +11,8 @@ from src.models.components.selector_model import SelectorModel
 from src.models.components.temporal_model import TemporalModel
 from src.models.components.text_encoder import TextEncoder
 
+import numpy as np
+
 log = utils.get_pylogger(__name__)
 
 
@@ -139,6 +141,19 @@ class AnomalyCLIP(nn.Module):
                 image_features, text_features, labels, ncentroid, test_mode
             )
 
+            # Adding Description as other text feature to align with the selector model
+            # Adapting PLOVAD (https://ieeexplore.ieee.org/abstract/document/10836858)
+
+            # import from a npy file
+            text_prompt_desc = np.load("D:/ucf-prompt.npy")
+            text_prompt_desc = torch.tensor(text_prompt_desc).to(image_features.device) # (num_classes, 512) tensor
+
+            similarity_desc = self.selector_model(
+                image_features, text_prompt_desc, labels, ncentroid, test_mode
+            )
+
+            similarity = torch.where(similarity>similarity_desc,similarity,similarity_desc)
+
             # Re-center the features
             image_features = image_features - ncentroid
 
@@ -182,6 +197,33 @@ class AnomalyCLIP(nn.Module):
 
             text_features = self.get_text_features()
 
+            # Adding Description as other text feature to align with the selector model
+            # Adapting PLOVAD (https://ieeexplore.ieee.org/abstract/document/10836858)
+
+            # Description Example (testing)
+            # import from a npy file
+            text_prompt_desc = np.load("D:/ucf-prompt.npy")
+            text_prompt_desc = torch.tensor(text_prompt_desc).to(image_features.device) # (num_classes, 512) tensor
+
+            #print("Passou aqui")
+
+            (
+                logits_desc,
+                logits_topk_desc,
+                logits_bottomk_desc,
+                idx_topk_abn_desc,
+                idx_topk_nor_desc,
+                idx_bottomk_abn_desc,
+            ) = self.selector_model(
+                image_features,
+                text_prompt_desc,
+                labels,
+                ncentroid,
+                test_mode,
+            )
+
+            #print("Passou aqui 2")
+
             (
                 logits,
                 logits_topk,
@@ -196,6 +238,31 @@ class AnomalyCLIP(nn.Module):
                 ncentroid,
                 test_mode,
             )
+
+            logits = torch.where(logits>logits_desc,logits,logits_desc)
+
+            # ---Bem até aqui---
+            # Get topk, bottomk and idxs from the logits (testing)
+            logits = logits.view(
+                -1, self.num_segments * self.seg_length, logits.shape[-1]
+            )  # (batch, num_segments*seg_length, n_cls)
+
+            topk_mask, bottomk_mask = self.selector_model.generate_mask(logits)
+            topk_mask = topk_mask.to(image_features.device)
+            bottomk_mask = bottomk_mask.to(image_features.device)
+
+            logits_topk, idx_topk = self.selector_model.select_topk(logits, labels, topk_mask)
+            idx_topk_abn, idx_topk_nor = (
+                idx_topk[: idx_topk.shape[0] // 2],
+                idx_topk[idx_topk.shape[0] // 2 :],
+            )
+
+            logits_bottomk, idx_bottomk = self.selector_model.select_bottomk(logits, labels, bottomk_mask)
+            idx_bottomk_abn = idx_bottomk[: idx_bottomk.shape[0] // 2]
+
+            logits = logits.view(-1, logits.shape[-1])
+            logits_topk = logits_topk.view(-1, logits_topk.shape[-1])
+            logits_bottomk = logits_bottomk.view(-1, logits_bottomk.shape[-1])
 
             # Re-center the features
             image_features = image_features - ncentroid
