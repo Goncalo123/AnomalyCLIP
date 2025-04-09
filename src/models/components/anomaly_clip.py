@@ -12,6 +12,7 @@ from src.models.components.temporal_model import TemporalModel
 from src.models.components.text_encoder import TextEncoder
 
 import numpy as np
+from src.models.components.hard_attention import MLP, HardAttention
 
 log = utils.get_pylogger(__name__)
 
@@ -106,6 +107,11 @@ class AnomalyCLIP(nn.Module):
             seg_length=self.seg_length,
         )
 
+        self.mlp = MLP(input_dim=512)
+        self.hard_attention = HardAttention(k=0.0, num_samples=self.num_segments * self.seg_length, input_dim=512)
+        self.apply_HA = True
+        self.visual = "vit"
+
     def forward(
         self,
         image_features,
@@ -134,6 +140,14 @@ class AnomalyCLIP(nn.Module):
             b, ncrops, t, d = image_features.shape
 
             image_features = image_features.view(-1, t, d)
+
+            # Addapting CLIP-TSA (https://arxiv.org/pdf/2212.05136)
+
+            image_features_tsa = image_features
+
+            image_features_tsa = self.apply_hard_attention(image_features_tsa)
+
+            image_features = image_features_tsa
 
             text_features = self.get_text_features()
 
@@ -195,6 +209,14 @@ class AnomalyCLIP(nn.Module):
             )  # batch_size, num_segments * seg_length, 512
             image_features = image_features.view(-1, d)
 
+            # Addapting CLIP-TSA (https://arxiv.org/pdf/2212.05136)
+
+            image_features_tsa = image_features.view(-1, t, d)
+
+            image_features_tsa = self.apply_hard_attention(image_features_tsa)
+
+            image_features = image_features_tsa.view(-1,d)
+
             text_features = self.get_text_features()
 
             # Adding Description as other text feature to align with the selector model
@@ -204,8 +226,6 @@ class AnomalyCLIP(nn.Module):
             # import from a npy file
             text_prompt_desc = np.load("D:/ucf-prompt.npy")
             text_prompt_desc = torch.tensor(text_prompt_desc).to(image_features.device) # (num_classes, 512) tensor
-
-            #print("Passou aqui")
 
             (
                 logits_desc,
@@ -221,8 +241,6 @@ class AnomalyCLIP(nn.Module):
                 ncentroid,
                 test_mode,
             )
-
-            #print("Passou aqui 2")
 
             (
                 logits,
@@ -241,8 +259,6 @@ class AnomalyCLIP(nn.Module):
 
             logits = torch.where(logits>logits_desc,logits,logits_desc)
 
-            # ---Bem até aqui---
-            # Get topk, bottomk and idxs from the logits (testing)
             logits = logits.view(
                 -1, self.num_segments * self.seg_length, logits.shape[-1]
             )  # (batch, num_segments*seg_length, n_cls)
@@ -298,6 +314,17 @@ class AnomalyCLIP(nn.Module):
         )
 
         return features
+    
+    def apply_hard_attention(self, out):
+        if self.apply_HA:
+            if self.visual != "vit" and out.shape[0] > 1 and out.shape[1] != 32:
+                concat = []
+                for i in out:
+                    concat.append(self.hard_attention(i.unsqueeze(0)))  # Apply hard attention individually
+                out = torch.cat(concat, dim=0)
+            else:
+                out = self.hard_attention(out)  # Apply hard attention to the whole tensor
+        return out
 
 
 if __name__ == "__main__":
